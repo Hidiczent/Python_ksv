@@ -6,12 +6,12 @@ import json
 app = Flask(__name__)
 CORS(app)
 
-# ===== 1. โหลด association rules (จาก FP-Growth) =====
+# ===== 1. Load association rules (from FP-Growth) =====
 with open("rules.json", "r", encoding="utf-8") as f:
     rule_data = json.load(f)
 rules = pd.DataFrame(rule_data)
 
-# ===== 2. โหลดข้อมูลสินค้าขายดีต่อหมวดหมู่ =====
+# ===== 2. Load Data  =====
 products_df = pd.read_csv("data/Extracted_Product_Categories.csv")
 sales_df1 = pd.read_excel("data/month1.xlsx", sheet_name="รายงานรายวัน", skiprows=6)[["ชื่อสินค้า", "วันที่"]]
 sales_df2 = pd.read_excel("data/month2.xlsx", sheet_name="รายงานรายวัน", skiprows=6)[["ชื่อสินค้า", "วันที่"]]
@@ -23,7 +23,7 @@ sales_df = sales_df.dropna(subset=["หมวดหมู่"])
 
 categories = sorted(products_df["หมวดหมู่"].dropna().unique())
 
-# ===== API 1: แนะนำสินค้าจาก association rules =====
+# ===== API 1: Recommend product from association rules =====
 @app.route('/api/recommend', methods=['POST'])
 def recommend():
     input_items = request.json.get('items', [])
@@ -38,7 +38,7 @@ def recommend():
     recommendations -= set(input_items)
     return jsonify({'recommendations': list(recommendations)})
 
-# ===== API 2: แนะนำสินค้าขายดีในหมวดหมู่ =====
+# ===== API 2: Recommend best-selling products in categories =====
 @app.route('/api/recommend-products', methods=['POST'])
 def recommend_by_category():
     category = request.json.get("category", None)
@@ -56,7 +56,7 @@ def recommend_by_category():
 
     return jsonify({"products": top_products})
 
-# ===== API 3: คู่สินค้าที่มักซื้อคู่กันบ่อย =====
+# ===== API 3: Product pairs that are often bought together =====
 @app.route('/api/top-pairs', methods=['GET'])
 def top_pairs():
     pair_rules = rules[
@@ -68,16 +68,16 @@ def top_pairs():
         lambda row: f"{list(row['antecedents'])[0]} ↔ {list(row['consequents'])[0]}", axis=1
     )
 
-    pair_rules = pair_rules.sort_values(by="support", ascending=False).head(10)
+    pair_rules = pair_rules.sort_values(by="support", ascending=False).head(20)
 
     return jsonify(pair_rules[["pair", "support", "confidence", "lift"]].to_dict(orient="records"))
 
-# ===== API 4: หมวดหมู่ทั้งหมด =====
+# ===== API 4: all categories =====
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
     return jsonify({"categories": categories})
 
-# ===== API 5: แนะนำสินค้าที่มักซื้อคู่กับสินค้าที่เลือก =====
+# ===== API 5: Recommend products frequently bought together =====
 @app.route('/api/pair-recommend', methods=['POST'])
 def pair_recommend():
     input_items = set(request.json.get('items', []))
@@ -92,10 +92,25 @@ def pair_recommend():
     pair_recommendations -= input_items
     return jsonify({'pair_recommendations': list(pair_recommendations)})
 
-# ===== API 6: rules ทั้งหมด (debug ใช้ดูได้) =====
+# ===== API 6: rules all (debug use view only) =====
 @app.route('/api/rules', methods=['GET'])
 def get_rules():
-    return jsonify(rules.to_dict(orient="records"))
+    def convert_set(value):
+        if isinstance(value, frozenset):
+            return list(value)
+        return value
+
+    cleaned_rules = []
+    for _, row in rules.iterrows():
+        cleaned_rules.append({
+            "antecedents": convert_set(row["antecedents"]),
+            "consequents": convert_set(row["consequents"]),
+            "support": row["support"],
+            "confidence": row["confidence"],
+            "lift": row["lift"],
+        })
+
+    return jsonify(cleaned_rules)
 
 if __name__ == '__main__':
     app.run(debug=True)
